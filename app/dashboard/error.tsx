@@ -1,0 +1,2 @@
+"use client";
+export default function DashboardError({ reset }: { error: Error; reset: () => void }) { return <div className="card p-8"><p className="eyebrow">Algo no salió bien</p><h1 className="section-title mt-2">No pudimos cargar esta sección</h1><p className="muted mt-2">Tu información está segura. Intenta nuevamente.</p><button className="button mt-5" onClick={reset}>Reintentar</button></div>; }
