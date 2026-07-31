@@ -1,0 +1,13 @@
+project_id = "aula-puente-ia"
+
+[api]
+enabled = true
+schemas = ["public", "graphql_public", "app", "knowledge", "curriculum"]
+extra_search_path = ["public", "extensions"]
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[functions.generate-activity]
+verify_jwt = true
