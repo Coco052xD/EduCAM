@@ -1,46 +1,81 @@
 import { describe, expect, it } from "vitest";
-import { END_MARKER, START_MARKER, extractRecommendation } from "../supabase/functions/_shared/prompts";
+import { CLOSING, FIRST_SECTION, SECTIONS, buildPrompt, extractRecommendation } from "../supabase/functions/_shared/prompts";
+
+const context = {
+  subject: { category: "Lenguajes", topic: "Lectura de imágenes", learningObjective: "Construir significados a partir de imágenes.", grade: 3 },
+  student: {
+    ageRange: "7-9",
+    grade: 3,
+    profile: [{ question: "¿Cómo comprende mejor las instrucciones?", answer: "Objetos físicos" }],
+    conditions: ["Discapacidad auditiva"],
+    educatorComment: "Se levanta entre clases.",
+  },
+  examples: [],
+  rejected: [],
+  refinement: null,
+};
+
+describe("construcción del prompt", () => {
+  it("cierra con el primer encabezado, para que el modelo continúe la respuesta", () => {
+    // Es lo que evita el preámbulo: el modelo completa prosa, no contesta a
+    // una ficha técnica que luego resume en inglés.
+    expect(buildPrompt(context).endsWith(FIRST_SECTION)).toBe(true);
+  });
+
+  it("pone el perfil por encima del padecimiento de forma explícita", () => {
+    expect(buildPrompt(context)).toContain("Esto pesa más que el padecimiento");
+  });
+
+  it("no filtra el nombre del alumno: el contexto nunca lo recibe", () => {
+    expect(buildPrompt(context)).not.toMatch(/nombre del alumno: [A-Z]/);
+    expect(buildPrompt(context)).toContain('di "el alumno"');
+  });
+
+  it("omite los bloques vacíos en vez de dejar encabezados huérfanos", () => {
+    const prompt = buildPrompt(context);
+    expect(prompt).not.toContain("calificó como buenas");
+    expect(prompt).not.toContain("Ya descartado");
+    expect(prompt).not.toContain("pide específicamente");
+  });
+
+  it("incluye los ejemplos y descartes cuando existen", () => {
+    const prompt = buildPrompt({ ...context, examples: ["Usar tarjetas."], rejected: ["Demasiado texto."], refinement: "Menos material impreso." });
+    expect(prompt).toContain("Usar tarjetas.");
+    expect(prompt).toContain("Demasiado texto.");
+    expect(prompt).toContain("Menos material impreso.");
+  });
+
+  it("pide los cuatro apartados y la frase de cierre", () => {
+    const prompt = buildPrompt(context);
+    for (const section of SECTIONS) expect(prompt).toContain(section);
+    expect(prompt).toContain(CLOSING);
+  });
+});
 
 describe("extracción de la recomendación", () => {
-  // Los cuerpos van a tamaño realista a propósito: por debajo de 80 caracteres
-  // se activa el fallback, y entonces no se estaría probando la extracción.
-  const CUERPO = "Cómo presentar el tema: muestre un objeto real junto a su dibujo. Cómo pedir la participación: trabaje en parejas con instrucciones de dos pasos.";
+  const CUERPO = "muestre un objeto real junto a su dibujo.\n\nCómo pedir la participación: trabaje en parejas con instrucciones de dos pasos.";
 
-  it("se queda solo con lo que hay entre marcadores", () => {
-    const raw = `Role: assistant for CAM educators.\nConstraint 1: use only provided context.\n${START_MARKER}\n${CUERPO}\n${END_MARKER}\nNo diagnosis? Yes.\nMax 400 words? Yes.`;
+  it("repone el encabezado cuando el modelo continúa desde él", () => {
+    // Caso normal: el prompt termina con el encabezado, así que la salida
+    // empieza directamente con el contenido.
+    expect(extractRecommendation(CUERPO)).toBe(`${FIRST_SECTION} ${CUERPO}`);
+  });
+
+  it("descarta el preámbulo si el modelo lo escribe", () => {
+    const raw = `Role: assistant for CAM educators.\nTask: write a recommendation.\nFormat: four sections.\n\n${FIRST_SECTION} ${CUERPO}`;
     const result = extractRecommendation(raw);
-    expect(result).toBe(CUERPO);
-    expect(result).not.toContain("Constraint");
-    expect(result).not.toContain("No diagnosis");
+    expect(result.startsWith(FIRST_SECTION)).toBe(true);
+    expect(result).not.toContain("Role:");
+    expect(result).not.toContain("Format:");
   });
 
-  it("si el modelo repite el marcador, toma el último bloque", () => {
-    const raw = `${START_MARKER} borrador viejo ${START_MARKER}\n${CUERPO}\n${END_MARKER}`;
-    expect(extractRecommendation(raw)).toBe(CUERPO);
+  it("toma la última aparición del encabezado, no la de la paráfrasis", () => {
+    const raw = `Format: use exactly "${FIRST_SECTION}" as the first heading.\n\n${FIRST_SECTION} ${CUERPO}`;
+    expect(extractRecommendation(raw)).toBe(`${FIRST_SECTION} ${CUERPO}`);
   });
 
-  it("devuelve el texto completo si el modelo omite los marcadores", () => {
-    // Una recomendación con ruido es más útil que un error.
-    expect(extractRecommendation("Cómo presentar el tema: use imágenes.")).toBe("Cómo presentar el tema: use imágenes.");
-  });
-
-  it("tolera que falte solo el marcador de cierre", () => {
-    const cuerpo = "Cómo presentar el tema: muestre un objeto real y su dibujo, y compárelos frente al grupo.";
-    expect(extractRecommendation(`preámbulo\n${START_MARKER}\n${cuerpo}`)).toBe(cuerpo);
-  });
-
-  it("cae al texto completo si el bloque marcado sale demasiado corto", () => {
-    // Lo que pasó en producción: el modelo escribió los marcadores dentro de
-    // su paráfrasis del formato, y entre ellos no quedó recomendación alguna.
-    const raw = `Format: escriba ${START_MARKER}, luego el texto, luego ${END_MARKER}. Cómo presentar el tema: use objetos físicos y compárelos con su dibujo para explicar el concepto.`;
-    const result = extractRecommendation(raw);
-    expect(result).toContain("objetos físicos");
-    expect(result).not.toContain(START_MARKER);
-    expect(result).not.toContain(END_MARKER);
-  });
-
-  it("limpia viñetas de asterisco y cercas de código", () => {
-    const raw = `${START_MARKER}\n\`\`\`markdown\n* *Qué material usar:* tarjetas.\n\`\`\`\n${END_MARKER}`;
-    expect(extractRecommendation(raw)).toBe("Qué material usar: tarjetas.");
+  it("limpia viñetas y cercas de código", () => {
+    const raw = "```markdown\n* **texto con viñeta**\n```";
+    expect(extractRecommendation(raw)).toBe(`${FIRST_SECTION} texto con viñeta`);
   });
 });
