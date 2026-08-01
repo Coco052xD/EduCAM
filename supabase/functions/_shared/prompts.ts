@@ -42,24 +42,38 @@ ${student.profile.map((item) => `- ${item.question} ${item.answer}`).join("\n") 
     context.rejected.length ? `YA DESCARTADO POR EL EDUCADOR (no lo repitas):\n${context.rejected.map((item) => `- ${item}`).join("\n")}` : "",
     context.refinement ? `PETICIÓN EXPLÍCITA DEL EDUCADOR: ${context.refinement}` : "",
 
-    `FORMATO DE RESPUESTA:
-Escribe ${START_MARKER}, luego la recomendación, luego ${END_MARKER}.
-Fuera de esos marcadores no escribas nada.
-Dentro: máximo 300 palabras, en español, texto corrido sin markdown ni viñetas con asterisco, con estos cuatro apartados y nada más:
+    `FORMATO: máximo 300 palabras, en español, texto corrido sin markdown ni viñetas, con estos cuatro apartados y nada más:
 
 Cómo presentar el tema:
 Cómo pedir la participación:
 Qué material usar:
 Cómo verificar la comprensión:
 
-No repitas estas instrucciones. No incluyas listas de verificación ni comentarios sobre tu propia respuesta.`,
+Cierra con ${END_MARKER}. No incluyas listas de verificación ni comentarios sobre tu propia respuesta.`,
+
+    // El prompt termina con el marcador de apertura para que el modelo continúe
+    // el texto en lugar de parafrasear las instrucciones antes de responder.
+    START_MARKER,
   ];
   return blocks.filter(Boolean).join("\n\n");
 }
 
+/** Restos frecuentes: cercas de código y viñetas de asterisco que pedimos evitar. */
+function clean(text: string): string {
+  return text
+    .replace(/```[a-z]*\n?/gi, "")
+    .replace(/^\s*\*\s+/gm, "")
+    .replace(/\*+/g, "")
+    .trim();
+}
+
+/** Debajo de esto no hay una recomendación, hay un fragmento de la paráfrasis. */
+const MIN_USEFUL = 80;
+
 /**
- * Se queda con lo que hay entre marcadores. Si el modelo los omite, devuelve
- * el texto completo: una recomendación con ruido es más útil que un error.
+ * Se queda con lo que hay entre marcadores. Si ese bloque sale demasiado corto
+ * —el modelo escribió los marcadores dentro de su paráfrasis— cae al texto
+ * completo: una recomendación con ruido es más útil que un error.
  */
 export function extractRecommendation(raw: string): string {
   let text = raw;
@@ -70,10 +84,8 @@ export function extractRecommendation(raw: string): string {
   const end = text.indexOf(END_MARKER);
   if (end !== -1) text = text.slice(0, end);
 
-  // Restos frecuentes: cercas de código y viñetas de asterisco que pedimos evitar.
-  return text
-    .replace(/```[a-z]*\n?/gi, "")
-    .replace(/^\s*\*\s+/gm, "")
-    .replace(/\*+/g, "")
-    .trim();
+  const marked = clean(text);
+  if (marked.length >= MIN_USEFUL) return marked;
+
+  return clean(raw.split(START_MARKER).join(" ").split(END_MARKER).join(" "));
 }
