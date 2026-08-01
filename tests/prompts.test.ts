@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FIRST_SECTION, SECTIONS, buildPrompt, extractRecommendation } from "../supabase/functions/_shared/prompts";
+import { FIRST_SECTION, SECTIONS, buildFallbackRecommendation, buildPrompt, extractRecommendation } from "../supabase/functions/_shared/prompts";
 
 const context = {
   subject: { category: "Lenguajes", topic: "Lectura de imágenes", learningObjective: "Construir significados a partir de imágenes.", grade: 3 },
@@ -51,13 +51,31 @@ describe("construcción del prompt", () => {
     expect(prompt).toContain("Máximo 90 palabras");
     expect(prompt).toContain("verbos de acción");
     expect(prompt).toContain("Evita teoría, justificaciones y términos técnicos");
-    expect(prompt).toContain(SECTIONS.join("\n"));
+    for (const section of SECTIONS) expect(prompt).toContain(section);
+    expect(prompt).not.toMatch(/final check|markdown/i);
   });
 
   it("refuerza el segundo intento sin cambiar los datos del contexto", () => {
     const retry = buildPrompt(context, true);
-    expect(retry).toContain("El intento anterior no respetó el formato");
+    expect(retry).toContain("El intento anterior no produjo una actividad");
     expect(retry).toContain(context.subject.topic);
+  });
+});
+
+describe("actividad de respaldo", () => {
+  it("produce una actividad breve, válida y en español", () => {
+    const fallback = buildFallbackRecommendation(context);
+    expect(extractRecommendation(fallback)).toBe(fallback);
+    expect(fallback.split(/\s+/).length).toBeLessThanOrEqual(90);
+    expect(fallback).toContain("un objeto cotidiano");
+  });
+
+  it("adapta la participación cuando el perfil prefiere parejas", () => {
+    const paired = buildFallbackRecommendation({
+      ...context,
+      student: { ...context.student, profile: [...context.student.profile, { question: "¿Cómo participa?", answer: "En parejas" }] },
+    });
+    expect(paired).toContain("Forma una pareja");
   });
 });
 
