@@ -1,13 +1,4 @@
-/**
- * Gemma no tiene rol de sistema: todo el prompt es contenido que puede
- * comentar. Un prompt con forma de especificación (TAREA / REGLAS / FORMATO)
- * hace que devuelva su propio resumen de la especificación, en inglés.
- *
- * Por eso el prompt cierra con el primer encabezado de la respuesta: el modelo
- * queda continuando prosa en español en vez de contestando a una ficha
- * técnica. Es lo que ancla a la vez el idioma, el formato y la ausencia de
- * preámbulo.
- */
+/** Gemma continúa desde el primer encabezado para evitar preámbulos. */
 export const SECTIONS = [
   "Inicio:",
   "Actividad:",
@@ -28,7 +19,7 @@ type PromptContext = {
 export function buildPrompt(context: PromptContext, retry = false) {
   const { subject, student } = context;
   const blocks = [
-    `Eres un asistente de planeación pedagógica inclusiva para un Centro de Atención Múltiple en México.`,
+    `Escribe una actividad escolar inclusiva, breve y lista para aplicar en un Centro de Atención Múltiple de México.`,
 
     `Tema: ${subject.category} · ${subject.topic} (${subject.grade}.º de primaria)`,
     subject.learningObjective ? `Objetivo de aprendizaje: ${subject.learningObjective}` : "",
@@ -42,18 +33,47 @@ ${student.profile.map((item) => `- ${item.question} ${item.answer}`).join("\n") 
     context.examples.length ? `Recomendaciones que este educador calificó como buenas. Reutiliza el enfoque, no el texto:\n${context.examples.map((item) => `- ${item.slice(0, 400)}`).join("\n")}` : "",
     context.rejected.length ? `Ya descartado por el educador, no lo repitas:\n${context.rejected.map((item) => `- ${item}`).join("\n")}` : "",
     context.refinement ? `El educador pide específicamente: ${context.refinement}` : "",
-    retry ? `El intento anterior no respetó el formato. Esta vez entrega únicamente la actividad final.` : "",
+    retry ? `El intento anterior no produjo una actividad. Responde ahora únicamente con las cuatro instrucciones solicitadas.` : "",
 
-    `Propón una microactividad lista para aplicar. Escribe solamente en español de México y háblale de tú al educador. Máximo 90 palabras en total. Usa una sola frase corta por apartado, con verbos de acción e instrucciones concretas. Evita teoría, justificaciones y términos técnicos. No expliques tus decisiones, no repitas estas reglas y no escribas comprobaciones como "final check". Sin viñetas ni markdown. No diagnostiques, no menciones medicamentos ni tratamientos, no infieras capacidades a partir del padecimiento, no inventes datos que no estén arriba y nunca escribas el nombre del alumno: di "el alumno".
+    `Escribe solamente en español de México y háblale de tú al educador. Máximo 90 palabras en total. Usa una frase corta por apartado, con verbos de acción e instrucciones concretas. Evita teoría, justificaciones y términos técnicos. No expliques tus decisiones ni repitas las reglas. No uses viñetas ni formato especial. No diagnostiques, no menciones medicamentos ni tratamientos, no infieras capacidades a partir del padecimiento, no inventes datos y nunca escribas el nombre del alumno: di "el alumno".
 
-Entrega solo estos cuatro apartados, cada uno en una línea y en este orden:
-${SECTIONS.join("\n")}
+La respuesta debe tener exactamente esta forma, con una instrucción después de cada título:
+Inicio: presenta el tema de forma concreta.
+Actividad: indica qué harán el educador y el alumno.
+Materiales: menciona solo lo necesario.
+Cierre rápido: comprueba lo aprendido con una acción sencilla.
 No escribas nada antes de "${FIRST_SECTION}" ni después del contenido de "${SECTIONS.at(-1)}".`,
 
     // Cierra con el primer encabezado para que el modelo continúe la respuesta.
     FIRST_SECTION,
   ];
   return blocks.filter(Boolean).join("\n\n");
+}
+
+/** Respuesta local segura cuando el proveedor no sigue las instrucciones. */
+export function buildFallbackRecommendation(context: PromptContext): string {
+  const answers = context.student.profile.map((item) => item.answer).join(" ").toLocaleLowerCase("es-MX");
+  const prefersPairs = /pareja|compañer/.test(answers);
+
+  let support = "un ejemplo cercano";
+  let materials = "dos tarjetas, una hoja y un lápiz";
+  if (/objeto|físic|concreto|manipul/.test(answers)) {
+    support = "un objeto cotidiano";
+    materials = "un objeto cotidiano y dos tarjetas";
+  } else if (/imagen|visual|dibujo/.test(answers)) {
+    support = "una imagen grande";
+    materials = "dos imágenes grandes, una hoja y un lápiz";
+  } else if (/movimiento|corporal/.test(answers)) {
+    support = "un gesto o movimiento";
+    materials = "dos tarjetas y un espacio libre";
+  }
+
+  const topic = context.subject.topic.slice(0, 80);
+  const activity = prefersPairs
+    ? `Forma una pareja e invítalos a elegir o representar un ejemplo de ${topic}.`
+    : `Invita al alumno a elegir o representar un ejemplo de ${topic}.`;
+
+  return `${FIRST_SECTION} Presenta ${topic} con ${support}.\nActividad: ${activity}\nMateriales: Usa ${materials}.\nCierre rápido: Pide al alumno mostrar su respuesta con una palabra, gesto o dibujo.`;
 }
 
 /** Límites flexibles: el prompt pide 90; se tolera un pequeño margen. */

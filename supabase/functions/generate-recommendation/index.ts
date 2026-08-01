@@ -3,7 +3,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { z } from "npm:zod@4";
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
-import { buildPrompt, extractRecommendation } from "../_shared/prompts.ts";
+import { buildFallbackRecommendation, buildPrompt, extractRecommendation } from "../_shared/prompts.ts";
 import { callGemma } from "../_shared/gemma.ts";
 import { assertNoName, scrubName } from "../_shared/safety.ts";
 
@@ -91,14 +91,16 @@ Deno.serve(async (request) => {
 
     let content = "";
     let rawModelOutput = "";
+    let generationModel = Deno.env.get("GEMMA_MODEL")!;
     for (let attempt = 0; attempt < 2 && !content; attempt += 1) {
       rawModelOutput = await callGemma(buildPrompt(context, attempt > 0));
       content = extractRecommendation(rawModelOutput);
     }
     if (!content) {
-      // Nunca guardar razonamiento, texto en inglés o una respuesta incompleta.
-      // El crudo queda solo en logs para poder diagnosticar al proveedor.
-      throw new Error(`Gemma no entregó una actividad válida en dos intentos. Última salida: ${JSON.stringify(rawModelOutput.slice(0, 600))}`);
+      // El detalle sirve para diagnosticar, pero nunca debe llegar al usuario.
+      console.error("Gemma no entregó una actividad válida; se usará la plantilla segura:", JSON.stringify(rawModelOutput.slice(0, 600)));
+      content = buildFallbackRecommendation(context);
+      generationModel = "plantilla-segura";
     }
     assertNoName(content, student.name);
 
@@ -110,7 +112,7 @@ Deno.serve(async (request) => {
         educator_id: user.id,
         content,
         context,
-        model: Deno.env.get("GEMMA_MODEL")!,
+        model: generationModel,
         regenerated_from: body.regeneratedFrom ?? null,
       })
       .select("id")
@@ -123,6 +125,6 @@ Deno.serve(async (request) => {
     // A la pestaña Logs del dashboard: Invocations solo muestra el código, y
     // sin esto un 422 obliga a adivinar cuál de los seis fallos posibles fue.
     console.error("generate-recommendation falló:", message);
-    return jsonResponse({ error: message }, 422);
+    return jsonResponse({ error: "No pudimos generar la actividad. Inténtalo de nuevo en un momento." }, 422);
   }
 });
