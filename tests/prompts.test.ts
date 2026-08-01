@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLOSING, FIRST_SECTION, SECTIONS, buildPrompt, extractRecommendation } from "../supabase/functions/_shared/prompts";
+import { FIRST_SECTION, SECTIONS, buildPrompt, extractRecommendation } from "../supabase/functions/_shared/prompts";
 
 const context = {
   subject: { category: "Lenguajes", topic: "Lectura de imágenes", learningObjective: "Construir significados a partir de imágenes.", grade: 3 },
@@ -45,15 +45,24 @@ describe("construcción del prompt", () => {
     expect(prompt).toContain("Menos material impreso.");
   });
 
-  it("pide los cuatro apartados y la frase de cierre", () => {
+  it("pide una respuesta breve, directa y dividida en cuatro momentos", () => {
     const prompt = buildPrompt(context);
     for (const section of SECTIONS) expect(prompt).toContain(section);
-    expect(prompt).toContain(CLOSING);
+    expect(prompt).toContain("Máximo 90 palabras");
+    expect(prompt).toContain("verbos de acción");
+    expect(prompt).toContain("Evita teoría, justificaciones y términos técnicos");
+    expect(prompt).toContain(SECTIONS.join("\n"));
+  });
+
+  it("refuerza el segundo intento sin cambiar los datos del contexto", () => {
+    const retry = buildPrompt(context, true);
+    expect(retry).toContain("El intento anterior no respetó el formato");
+    expect(retry).toContain(context.subject.topic);
   });
 });
 
 describe("extracción de la recomendación", () => {
-  const CUERPO = "muestre un objeto real junto a su dibujo.\n\nCómo pedir la participación: trabaje en parejas con instrucciones de dos pasos.";
+  const CUERPO = "Muestra un objeto real junto a su dibujo.\nActividad: Invita al alumno a relacionarlos.\nMateriales: Un objeto y una tarjeta.\nCierre rápido: Pídele señalar la pareja correcta.";
 
   it("repone el encabezado cuando el modelo continúa desde él", () => {
     // Caso normal: el prompt termina con el encabezado, así que la salida
@@ -74,17 +83,27 @@ describe("extracción de la recomendación", () => {
     expect(extractRecommendation(raw)).toBe(`${FIRST_SECTION} ${CUERPO}`);
   });
 
-  it("ignora el encabezado suelto cuando el modelo repite la cola del prompt", () => {
-    // Lo que rompía: el prompt termina con el encabezado, el modelo lo repite
-    // al final y la última aparición no deja nada después.
+  it("rechaza la salida cuando el modelo repite la cola del prompt", () => {
     const raw = `${FIRST_SECTION} ${CUERPO}\n\nUsa exactamente estos cuatro apartados.\n\n${FIRST_SECTION}`;
-    const result = extractRecommendation(raw);
-    expect(result).toContain("objeto real junto a su dibujo");
-    expect(result.length).toBeGreaterThan(80);
+    expect(extractRecommendation(raw)).toBe("");
   });
 
   it("limpia viñetas y cercas de código", () => {
-    const raw = "```markdown\n* **texto con viñeta**\n```";
-    expect(extractRecommendation(raw)).toBe(`${FIRST_SECTION} texto con viñeta`);
+    const raw = `\`\`\`markdown\n* **${FIRST_SECTION} Muestra una tarjeta.**\n* **Actividad: Pide al alumno elegir una imagen.**\n* **Materiales: Dos tarjetas.**\n* **Cierre rápido: Celebra la elección.**\n\`\`\``;
+    expect(extractRecommendation(raw)).toBe(`${FIRST_SECTION} Muestra una tarjeta.\nActividad: Pide al alumno elegir una imagen.\nMateriales: Dos tarjetas.\nCierre rápido: Celebra la elección.`);
+  });
+
+  it("rechaza análisis en inglés aunque mencione el formato", () => {
+    const raw = `Cómo presentar el tema: / Cómo pedir la participación: / Qué material usar: / Cómo verificar la comprensión:. The slashes might imply they are separators in the instructions.\n\nFinal check on content:\nPhysical objects? Yes.\n2 steps? Yes.`;
+    expect(extractRecommendation(raw)).toBe("");
+  });
+
+  it("rechaza respuestas incompletas", () => {
+    expect(extractRecommendation("Muestra un objeto real y pide que lo señale.")).toBe("");
+  });
+
+  it("rechaza instrucciones escritas en inglés", () => {
+    const raw = `${FIRST_SECTION} Show a picture.\nActividad: Ask the student to choose.\nMateriales: Two cards.\nCierre rápido: Check the answer.`;
+    expect(extractRecommendation(raw)).toBe("");
   });
 });

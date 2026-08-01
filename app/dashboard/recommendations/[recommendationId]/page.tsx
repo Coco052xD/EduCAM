@@ -41,7 +41,7 @@ export default async function RecommendationPage({ params }: { params: Promise<{
 
     {recommendation.regenerated_from && (
       <p className="muted text-sm">
-        Esta recomendación reemplaza a <Link className="font-bold text-[#176b5c]" href={`/dashboard/recommendations/${recommendation.regenerated_from}`}>una anterior</Link> que descartaste.
+        Esta recomendación reemplaza a <Link className="brand-link" href={`/dashboard/recommendations/${recommendation.regenerated_from}`}>una anterior</Link> que descartaste.
       </p>
     )}
 

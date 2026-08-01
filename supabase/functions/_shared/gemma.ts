@@ -22,7 +22,7 @@ export async function callGemma(prompt: string): Promise<string> {
         // la generación antes de producir nada. El presupuesto es holgado
         // porque el razonamiento, cuando el modelo lo emite, también consume
         // maxOutputTokens y dejaba la respuesta truncada.
-        generationConfig: { temperature: 0.6, maxOutputTokens: 2048 },
+        generationConfig: { temperature: 0.25, maxOutputTokens: 2048 },
       }),
     });
     if (!response.ok) {

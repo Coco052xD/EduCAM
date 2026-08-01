@@ -89,12 +89,16 @@ Deno.serve(async (request) => {
       refinement: body.refinement ?? null,
     };
 
-    const rawModelOutput = await callGemma(buildPrompt(context));
-    const content = extractRecommendation(rawModelOutput);
-    if (content.length < 80) {
-      // Incluir el crudo: sin él, un fallo de extracción obliga a adivinar qué
-      // devolvió el modelo, y adivinar ya costó tres despliegues.
-      throw new Error(`Respuesta insuficiente del modelo (${rawModelOutput.length} caracteres). Devolvió: ${JSON.stringify(rawModelOutput.slice(0, 600))}`);
+    let content = "";
+    let rawModelOutput = "";
+    for (let attempt = 0; attempt < 2 && !content; attempt += 1) {
+      rawModelOutput = await callGemma(buildPrompt(context, attempt > 0));
+      content = extractRecommendation(rawModelOutput);
+    }
+    if (!content) {
+      // Nunca guardar razonamiento, texto en inglés o una respuesta incompleta.
+      // El crudo queda solo en logs para poder diagnosticar al proveedor.
+      throw new Error(`Gemma no entregó una actividad válida en dos intentos. Última salida: ${JSON.stringify(rawModelOutput.slice(0, 600))}`);
     }
     assertNoName(content, student.name);
 
