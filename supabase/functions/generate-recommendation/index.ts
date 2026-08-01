@@ -1,5 +1,7 @@
-import { createClient } from "@supabase/supabase-js";
-import { z } from "zod";
+// Specifiers completos, no bare imports: el import map de deno.json no viaja
+// en el bundle del deploy y el bundler falla con "Relative import path".
+import { createClient } from "jsr:@supabase/supabase-js@2";
+import { z } from "npm:zod@4";
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { buildPrompt } from "../_shared/prompts.ts";
 import { callGemma } from "../_shared/gemma.ts";
