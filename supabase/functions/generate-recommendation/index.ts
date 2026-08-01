@@ -89,8 +89,13 @@ Deno.serve(async (request) => {
       refinement: body.refinement ?? null,
     };
 
-    const content = extractRecommendation(await callGemma(buildPrompt(context)));
-    if (content.length < 80) throw new Error("El modelo devolvió una recomendación demasiado corta; vuelve a intentar.");
+    const rawModelOutput = await callGemma(buildPrompt(context));
+    const content = extractRecommendation(rawModelOutput);
+    if (content.length < 80) {
+      // Incluir el crudo: sin él, un fallo de extracción obliga a adivinar qué
+      // devolvió el modelo, y adivinar ya costó tres despliegues.
+      throw new Error(`Respuesta insuficiente del modelo (${rawModelOutput.length} caracteres). Devolvió: ${JSON.stringify(rawModelOutput.slice(0, 600))}`);
+    }
     assertNoName(content, student.name);
 
     const { data: inserted, error: insertError } = await admin

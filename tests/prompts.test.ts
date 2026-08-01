@@ -74,6 +74,15 @@ describe("extracción de la recomendación", () => {
     expect(extractRecommendation(raw)).toBe(`${FIRST_SECTION} ${CUERPO}`);
   });
 
+  it("ignora el encabezado suelto cuando el modelo repite la cola del prompt", () => {
+    // Lo que rompía: el prompt termina con el encabezado, el modelo lo repite
+    // al final y la última aparición no deja nada después.
+    const raw = `${FIRST_SECTION} ${CUERPO}\n\nUsa exactamente estos cuatro apartados.\n\n${FIRST_SECTION}`;
+    const result = extractRecommendation(raw);
+    expect(result).toContain("objeto real junto a su dibujo");
+    expect(result.length).toBeGreaterThan(80);
+  });
+
   it("limpia viñetas y cercas de código", () => {
     const raw = "```markdown\n* **texto con viñeta**\n```";
     expect(extractRecommendation(raw)).toBe(`${FIRST_SECTION} texto con viñeta`);

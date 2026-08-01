@@ -52,6 +52,9 @@ ${student.profile.map((item) => `- ${item.question} ${item.answer}`).join("\n") 
   return blocks.filter(Boolean).join("\n\n");
 }
 
+/** Debajo de esto no hay recomendación, hay un encabezado suelto. */
+const MIN_USEFUL = 80;
+
 /** Restos frecuentes: cercas de código y viñetas que pedimos evitar. */
 function clean(text: string): string {
   return text
@@ -70,10 +73,22 @@ function clean(text: string): string {
  * empieza la respuesta de verdad y no su paráfrasis.
  */
 export function extractRecommendation(raw: string): string {
-  const start = raw.lastIndexOf(FIRST_SECTION);
-  if (start !== -1) return clean(raw.slice(start));
-  // Limpiar antes de reponer el encabezado: al revés arrastra el hueco que
-  // dejan las cercas de código y queda un espacio doble.
+  const positions: number[] = [];
+  for (let i = raw.indexOf(FIRST_SECTION); i !== -1; i = raw.indexOf(FIRST_SECTION, i + FIRST_SECTION.length)) {
+    positions.push(i);
+  }
+
+  // De atrás hacia adelante: la última aparición es la respuesta real, salvo
+  // cuando el modelo repite la cola del prompt y el encabezado queda al final
+  // sin nada después. En ese caso hay que seguir buscando hacia atrás.
+  for (const start of positions.reverse()) {
+    const candidate = clean(raw.slice(start));
+    if (candidate.length >= MIN_USEFUL) return candidate;
+  }
+
+  // Sin encabezado utilizable: el modelo continuó desde el prompt y hay que
+  // reponerlo. Limpiar antes de anteponer, o el hueco de las cercas de código
+  // deja un espacio doble.
   const body = clean(raw);
   return body ? `${FIRST_SECTION} ${body}` : "";
 }
