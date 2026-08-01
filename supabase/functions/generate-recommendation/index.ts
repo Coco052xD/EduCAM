@@ -69,10 +69,11 @@ Deno.serve(async (request) => {
       .map((row) => row.conditions?.name)
       .filter((name): name is string => Boolean(name));
 
-    // Few-shot: lo que este educador ya calificó como bueno para el mismo tema.
+    // El historial es personal por alumno y educador. Reutilizar ejemplos de
+    // otro alumno contamina el prompt con un perfil que no corresponde.
     const [{ data: examples }, { data: rejected }] = await Promise.all([
-      admin.from("recommendations").select("content").eq("subject_id", body.subjectId).eq("rating", "good").order("rated_at", { ascending: false }).limit(3),
-      admin.from("recommendations").select("content,comment").eq("student_id", body.studentId).eq("subject_id", body.subjectId).eq("rating", "bad").order("rated_at", { ascending: false }).limit(3),
+      admin.from("recommendations").select("content").eq("educator_id", user.id).eq("student_id", body.studentId).eq("subject_id", body.subjectId).eq("rating", "good").order("rated_at", { ascending: false }).limit(3),
+      admin.from("recommendations").select("content,comment").eq("educator_id", user.id).eq("student_id", body.studentId).eq("subject_id", body.subjectId).eq("rating", "bad").order("rated_at", { ascending: false }).limit(3),
     ]);
 
     const context = {
