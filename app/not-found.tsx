@@ -1,0 +1,2 @@
+import Link from "next/link";
+export default function NotFound() { return <main className="container-app grid min-h-[70vh] place-items-center"><div className="text-center"><p className="eyebrow">404</p><h1 className="page-title mt-3">No encontramos ese recurso</h1><p className="muted mt-3">Puede que no exista o que no tengas acceso.</p><Link className="button mt-6" href="/dashboard">Volver al resumen</Link></div></main>; }
