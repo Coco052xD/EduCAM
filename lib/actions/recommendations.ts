@@ -10,10 +10,26 @@ import type { ActionState } from "./auth";
  * La recomendación la escribe la Edge Function con service_role, no el cliente:
  * lo que produce el modelo no debe poder falsificarse desde el navegador.
  */
+/**
+ * supabase-js reporta cualquier fallo como "non-2xx status code" y esconde el
+ * cuerpo de la respuesta, que es donde va el motivo real. FunctionsHttpError
+ * trae el Response en `context`: de ahí se saca el mensaje.
+ */
+async function readInvokeError(error: unknown): Promise<string | null> {
+  const context = (error as { context?: unknown })?.context;
+  if (!(context instanceof Response)) return null;
+  try {
+    const body = await context.clone().json();
+    return typeof body?.error === "string" ? `${body.error} (HTTP ${context.status})` : null;
+  } catch {
+    return null;
+  }
+}
+
 async function generate(body: { studentId: string; subjectId: string; refinement?: string; regeneratedFrom?: string }) {
   const { supabase } = await requireUser();
   const { data, error } = await supabase.functions.invoke<{ recommendationId: string }>("generate-recommendation", { body });
-  if (error) return { error: error.message };
+  if (error) return { error: (await readInvokeError(error)) ?? error.message };
   if (!data?.recommendationId) return { error: "La generación no devolvió una recomendación." };
   return { recommendationId: data.recommendationId };
 }

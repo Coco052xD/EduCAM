@@ -20,7 +20,12 @@ export async function callGemma(prompt: string): Promise<string> {
         generationConfig: { temperature: 0.7 },
       }),
     });
-    if (!response.ok) throw new Error(`Gemma respondió ${response.status}.`);
+    if (!response.ok) {
+      // El cuerpo de Google dice si es la key, el modelo o la cuota; sin él
+      // solo se ve un número y hay que adivinar.
+      const detail = await response.text().catch(() => "");
+      throw new Error(`Gemma respondió ${response.status}: ${detail.slice(0, 300)}`);
+    }
     const payload = await response.json();
     const text = payload?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (typeof text !== "string" || !text.trim()) throw new Error("Gemma devolvió una respuesta vacía.");
