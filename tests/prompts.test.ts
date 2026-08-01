@@ -60,6 +60,17 @@ describe("construcción del prompt", () => {
     expect(retry).toContain("El intento anterior no produjo una actividad");
     expect(retry).toContain(context.subject.topic);
   });
+
+  it("repite el tema justo antes de generar, para que no se pierda en el contexto", () => {
+    // Visto en producción: con el perfil, los ejemplos y las reglas de por
+    // medio, el modelo respondió sobre un tema completamente distinto al
+    // pedido. El tema repetido pegado al encabezado es el ancla contra eso.
+    const prompt = buildPrompt(context);
+    const anchorIndex = prompt.indexOf(context.subject.topic, prompt.indexOf("Esto pesa más que el padecimiento"));
+    const headerIndex = prompt.lastIndexOf(FIRST_SECTION);
+    expect(anchorIndex).toBeGreaterThan(-1);
+    expect(headerIndex - anchorIndex).toBeLessThan(120);
+  });
 });
 
 describe("actividad de respaldo", () => {

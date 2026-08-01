@@ -70,10 +70,21 @@ Deno.serve(async (request) => {
       .filter((name): name is string => Boolean(name));
 
     // Few-shot: lo que este educador ya calificó como bueno para el mismo tema.
-    const [{ data: examples }, { data: rejected }] = await Promise.all([
+    const [{ data: examples }, { data: rejected }, { data: otherSubjects }] = await Promise.all([
       admin.from("recommendations").select("content").eq("subject_id", body.subjectId).eq("rating", "good").order("rated_at", { ascending: false }).limit(3),
       admin.from("recommendations").select("content,comment").eq("student_id", body.studentId).eq("subject_id", body.subjectId).eq("rating", "bad").order("rated_at", { ascending: false }).limit(3),
+      admin.from("subjects").select("topic").neq("id", body.subjectId),
     ]);
+
+    // Gemma a veces ignora el tema pedido y responde sobre otro del catálogo
+    // (visto en producción: pidió "Electricidad básica" y respondió sobre
+    // "Convivencia y acuerdos"). isValid solo revisa formato e idioma, así
+    // que una alucinación bien escrita en español pasaría sin esto.
+    const otherTopics = (otherSubjects ?? []).map((row) => (row.topic as string).toLocaleLowerCase("es-MX"));
+    const isOffTopic = (text: string) => {
+      const haystack = text.toLocaleLowerCase("es-MX");
+      return otherTopics.some((topic) => haystack.includes(topic));
+    };
 
     const context = {
       subject: { category: subject.category, topic: subject.topic, learningObjective: subject.learning_objective, grade: subject.grade },
@@ -92,12 +103,18 @@ Deno.serve(async (request) => {
     let content = "";
     let rawModelOutput = "";
     let generationModel = Deno.env.get("GEMMA_MODEL")!;
-    for (let attempt = 0; attempt < 2 && !content; attempt += 1) {
+    // 3 intentos: al chequeo de formato/idioma se suma ahora el de tema
+    // fuera de lugar, así que hay un motivo más de rechazo por intento.
+    const attempts = 3;
+    for (let attempt = 0; attempt < attempts && !content; attempt += 1) {
       rawModelOutput = await callGemma(buildPrompt(context, attempt > 0));
-      content = extractRecommendation(rawModelOutput);
+      const candidate = extractRecommendation(rawModelOutput);
+      content = candidate && !isOffTopic(candidate) ? candidate : "";
     }
     if (!content) {
-      // El detalle sirve para diagnosticar, pero nunca debe llegar al usuario.
+      // El detalle sirve para diagnosticar, pero nunca debe llegar al usuario:
+      // ni el razonamiento del modelo, ni texto en otro idioma, ni una
+      // respuesta sobre el tema equivocado.
       console.error("Gemma no entregó una actividad válida; se usará la plantilla segura:", JSON.stringify(rawModelOutput.slice(0, 600)));
       content = buildFallbackRecommendation(context);
       generationModel = "plantilla-segura";
