@@ -1,13 +1,11 @@
-export const SYSTEM_PROMPT = `Eres un asistente de planeación pedagógica inclusiva para educadores de un Centro de Atención Múltiple en México.
-Generas recomendaciones para impartir un tema a un alumno concreto: no diagnosticas ni tomas decisiones definitivas.
-
-Utiliza únicamente el contexto que se te entrega: el objetivo curricular, el perfil de aprendizaje desidentificado, los padecimientos seleccionados, el grado y la retroalimentación previa.
-
-EL PERFIL DE APRENDIZAJE PESA MÁS QUE EL PADECIMIENTO. El padecimiento contextualiza; lo que el educador observó en el aula manda. Cuando ambos sugieran caminos distintos, sigue el perfil.
-
-No debes: diagnosticar, recomendar medicamentos o tratamientos, inferir capacidades a partir de una discapacidad, usar lenguaje discriminatorio, prometer resultados, inventar características del alumno, ni mencionar nombres o apodos.
-
-La recomendación debe ser realizable en un salón real, con instrucciones concretas, formas alternativas de participación y una evaluación observable. Siempre requiere revisión del educador antes de aplicarse.`;
+/**
+ * Gemma no tiene rol de sistema: todo el prompt es contenido que el modelo
+ * puede comentar. En la práctica reescribe las instrucciones en inglés y añade
+ * una lista de autoverificación al final. Por eso la salida va delimitada y se
+ * extrae, en vez de confiar en un "no repitas las instrucciones".
+ */
+export const START_MARKER = "###RECOMENDACION###";
+export const END_MARKER = "###FIN###";
 
 type PromptContext = {
   subject: { category: string; topic: string; learningObjective: string | null; grade: number };
@@ -18,18 +16,64 @@ type PromptContext = {
 };
 
 export function buildPrompt(context: PromptContext) {
-  const parts = [
-    SYSTEM_PROMPT,
-    `\n## Tema\n${context.subject.category} · ${context.subject.topic} (${context.subject.grade}.º de primaria)`,
-    context.subject.learningObjective ? `Objetivo de aprendizaje: ${context.subject.learningObjective}` : "",
-    `\n## Perfil de aprendizaje del alumno (lo que más pesa)\n${context.student.profile.map((item) => `- ${item.question} ${item.answer}`).join("\n") || "- Sin respuestas registradas."}`,
-    context.student.educatorComment ? `\nComentario del educador: ${context.student.educatorComment}` : "",
-    `\n## Contexto adicional\nRango de edad: ${context.student.ageRange}. Grado: ${context.student.grade}.º.`,
-    `Padecimientos: ${context.student.conditions.join(", ") || "ninguno registrado"}.`,
-    context.examples.length ? `\n## Recomendaciones que este educador calificó como buenas\nReutiliza el enfoque, no el texto.\n${context.examples.map((item) => `---\n${item}`).join("\n")}` : "",
-    context.rejected.length ? `\n## Lo que el educador ya descartó\nNo repitas estos enfoques.\n${context.rejected.map((item) => `- ${item}`).join("\n")}` : "",
-    context.refinement ? `\n## Petición explícita del educador\n${context.refinement}` : "",
-    `\n## Formato\nDevuelve texto plano en español, sin JSON ni markdown de código. Máximo 400 palabras, organizado en: cómo presentar el tema, cómo pedir la participación, qué material usar, y cómo verificar la comprensión.`,
+  const { subject, student } = context;
+  const blocks = [
+    `Eres un asistente de planeación pedagógica inclusiva para educadores de un Centro de Atención Múltiple en México. Escribes en español de México, dirigiéndote al educador de usted.`,
+
+    `TAREA: escribe una recomendación de cómo impartir el tema de abajo a un alumno concreto.`,
+
+    `REGLAS:
+- El perfil de aprendizaje pesa más que el padecimiento. El padecimiento contextualiza; lo que el educador observó en el aula manda.
+- No diagnostiques, no menciones medicamentos ni tratamientos, no infieras capacidades a partir de una discapacidad.
+- No inventes características del alumno: usa solo lo que está abajo.
+- Nunca escribas el nombre del alumno. Di "el alumno".
+- Cierra con la frase: Requiere revisión del educador antes de aplicarse.`,
+
+    `TEMA: ${subject.category} · ${subject.topic} (${subject.grade}.º de primaria)`,
+    subject.learningObjective ? `OBJETIVO: ${subject.learningObjective}` : "",
+
+    `PERFIL DE APRENDIZAJE (lo que más pesa):
+${student.profile.map((item) => `- ${item.question} ${item.answer}`).join("\n") || "- Sin respuestas registradas."}`,
+    student.educatorComment ? `OBSERVACIÓN DEL EDUCADOR: ${student.educatorComment}` : "",
+
+    `CONTEXTO: ${student.ageRange} años, ${student.grade}.º de primaria. Padecimientos: ${student.conditions.join(", ") || "ninguno registrado"}.`,
+
+    context.examples.length ? `RECOMENDACIONES QUE ESTE EDUCADOR CALIFICÓ COMO BUENAS (reutiliza el enfoque, no el texto):\n${context.examples.map((item) => `- ${item.slice(0, 400)}`).join("\n")}` : "",
+    context.rejected.length ? `YA DESCARTADO POR EL EDUCADOR (no lo repitas):\n${context.rejected.map((item) => `- ${item}`).join("\n")}` : "",
+    context.refinement ? `PETICIÓN EXPLÍCITA DEL EDUCADOR: ${context.refinement}` : "",
+
+    `FORMATO DE RESPUESTA:
+Escribe ${START_MARKER}, luego la recomendación, luego ${END_MARKER}.
+Fuera de esos marcadores no escribas nada.
+Dentro: máximo 300 palabras, en español, texto corrido sin markdown ni viñetas con asterisco, con estos cuatro apartados y nada más:
+
+Cómo presentar el tema:
+Cómo pedir la participación:
+Qué material usar:
+Cómo verificar la comprensión:
+
+No repitas estas instrucciones. No incluyas listas de verificación ni comentarios sobre tu propia respuesta.`,
   ];
-  return parts.filter(Boolean).join("\n");
+  return blocks.filter(Boolean).join("\n\n");
+}
+
+/**
+ * Se queda con lo que hay entre marcadores. Si el modelo los omite, devuelve
+ * el texto completo: una recomendación con ruido es más útil que un error.
+ */
+export function extractRecommendation(raw: string): string {
+  let text = raw;
+
+  const start = text.lastIndexOf(START_MARKER);
+  if (start !== -1) text = text.slice(start + START_MARKER.length);
+
+  const end = text.indexOf(END_MARKER);
+  if (end !== -1) text = text.slice(0, end);
+
+  // Restos frecuentes: cercas de código y viñetas de asterisco que pedimos evitar.
+  return text
+    .replace(/```[a-z]*\n?/gi, "")
+    .replace(/^\s*\*\s+/gm, "")
+    .replace(/\*+/g, "")
+    .trim();
 }

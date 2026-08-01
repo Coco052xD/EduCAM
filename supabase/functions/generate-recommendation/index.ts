@@ -3,7 +3,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { z } from "npm:zod@4";
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
-import { buildPrompt } from "../_shared/prompts.ts";
+import { buildPrompt, extractRecommendation } from "../_shared/prompts.ts";
 import { callGemma } from "../_shared/gemma.ts";
 import { assertNoName, scrubName } from "../_shared/safety.ts";
 
@@ -89,7 +89,8 @@ Deno.serve(async (request) => {
       refinement: body.refinement ?? null,
     };
 
-    const content = await callGemma(buildPrompt(context));
+    const content = extractRecommendation(await callGemma(buildPrompt(context)));
+    if (content.length < 80) throw new Error("El modelo devolvió una recomendación demasiado corta; vuelve a intentar.");
     assertNoName(content, student.name);
 
     const { data: inserted, error: insertError } = await admin
@@ -110,6 +111,9 @@ Deno.serve(async (request) => {
     return jsonResponse({ recommendationId: inserted.id });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error inesperado al generar.";
+    // A la pestaña Logs del dashboard: Invocations solo muestra el código, y
+    // sin esto un 422 obliga a adivinar cuál de los seis fallos posibles fue.
+    console.error("generate-recommendation falló:", message);
     return jsonResponse({ error: message }, 422);
   }
 });

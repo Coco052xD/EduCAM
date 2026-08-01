@@ -17,7 +17,9 @@ export async function callGemma(prompt: string): Promise<string> {
       headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7 },
+        // Techo de salida: sin él, Gemma sigue escribiendo autoverificaciones
+        // después de la recomendación y se paga por tokens que se descartan.
+        generationConfig: { temperature: 0.6, maxOutputTokens: 900, stopSequences: ["###FIN###"] },
       }),
     });
     if (!response.ok) {
