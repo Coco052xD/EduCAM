@@ -44,6 +44,11 @@ Materiales: menciona solo lo necesario.
 Cierre rápido: comprueba lo aprendido con una acción sencilla.
 No escribas nada antes de "${FIRST_SECTION}" ni después del contenido de "${SECTIONS.at(-1)}".`,
 
+    // Repetido justo antes de generar: con el perfil, los ejemplos y las
+    // reglas de por medio, el tema queda lejos en el contexto y el modelo lo
+    // pierde de vista. Esta línea es lo último que lee antes de responder.
+    `La actividad es sobre "${subject.topic}" (${subject.category}), para un alumno de ${subject.grade}.º. No cambies de tema.`,
+
     // Cierra con el primer encabezado para que el modelo continúe la respuesta.
     FIRST_SECTION,
   ];
